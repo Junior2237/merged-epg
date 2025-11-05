@@ -32,11 +32,11 @@ jobs:
           python scripts/merge_epg.py
 
       - name: Commit merged epg
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          mkdir -p dist
-          mv merged_epg.xml dist/epg.xml
-          git add dist/epg.xml
-          git commit -m "Update merged EPG" || echo "No changes to commit"
-          git push
+  run: |
+    git config user.name "github-actions[bot]"
+    git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+    mkdir -p dist
+    mv merged_epg.xml.gz dist/epg.xml.gz
+    git add dist/epg.xml.gz
+    git commit -m "Update merged EPG (gzipped & pruned)" || echo "No changes to commit"
+    git push
