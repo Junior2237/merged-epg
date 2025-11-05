@@ -1,4 +1,3 @@
-scripts/merge_epg.py
 import sys
 import requests
 from lxml import etree
