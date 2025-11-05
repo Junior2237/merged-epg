@@ -40,3 +40,10 @@ jobs:
     git add dist/epg.xml.gz
     git commit -m "Update merged EPG (gzipped & pruned)" || echo "No changes to commit"
     git push
+
+    - name: Upload artifact (optional)
+  uses: actions/upload-artifact@v4
+  with:
+    name: epg
+    path: dist/epg.xml.gz
+
