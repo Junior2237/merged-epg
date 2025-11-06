@@ -4,26 +4,42 @@ import requests
 from lxml import etree
 from io import BytesIO
 
+# ✅ All your EPG sources combined (including the new PEACOCK one)
 URLS = [
-    "https://epghub.xyz/epg/EPG-BEIN-CY-DELUXEMUSIC.xml",
-    "https://epghub.xyz/epg/EPG-DIRECTVSPORTS-DISTROTV-DRAFTKINGS.xml",
-    "https://epghub.xyz/epg/EPG-DUMMY-CHANNELS-FANDUEL-LOCOMOTIONTV.xml",
-    "https://epghub.xyz/epg/EPG-PAC-PEACOCK-PLEX.xml",
-    "https://epghub.xyz/epg/EPG-POWERNATION-RAKUTEN-SPORTKLUB.xml",
-    "https://epghub.xyz/epg/EPG-SSPORTPLUS-TBNPLUS-THESPORTPLUS.xml",
-    "https://epghub.xyz/epg/EPG-US-US-LOCALS-US-SPORTS.xml",
+    "https://epghub.xyz/epg/EPG-BEIN.xml",
+    "https://epghub.xyz/epg/EPG-BR.xml",
+    "https://epghub.xyz/epg/EPG-CA.xml",
+    "https://epghub.xyz/epg/EPG-DELUXEMUSIC.xml",
+    "https://epghub.xyz/epg/EPG-DIRECTVSPORTS.xml",
+    "https://epghub.xyz/epg/EPG-DISTROTV.xml",
+    "https://epghub.xyz/epg/EPG-DRAFTKINGS.xml",
+    "https://epghub.xyz/epg/EPG-DUMMY-CHANNELS.xml",
+    "https://epghub.xyz/epg/EPG-ES.xml",
+    "https://epghub.xyz/epg/EPG-FANDUEL.xml",
+    "https://epghub.xyz/epg/EPG-IT.xml",
+    "https://epghub.xyz/epg/EPG-LOCOMOTIONTV.xml",
+    "https://epghub.xyz/epg/EPG-PAC.xml",
+    "https://epghub.xyz/epg/EPG-PEACOCK.xml.gz",   # 🆕 Added
+    "https://epghub.xyz/epg/EPG-PLEX.xml",
+    "https://epghub.xyz/epg/EPG-POWERNATION.xml",
+    "https://epghub.xyz/epg/EPG-RAKUTEN.xml",
+    "https://epghub.xyz/epg/EPG-SPORTKLUB.xml",
+    "https://epghub.xyz/epg/EPG-SSPORTPLUS.xml",
+    "https://epghub.xyz/epg/EPG-TBNPLUS.xml",
+    "https://epghub.xyz/epg/EPG-THESPORTPLUS.xml",
+    "https://epghub.xyz/epg/EPG-UK.xml",
+    "https://epghub.xyz/epg/EPG-US.xml",
+    "https://epghub.xyz/epg/EPG-US-LOCALS.xml",
+    "https://epghub.xyz/epg/EPG-US-SPORTS.xml",
     "https://epghub.xyz/epg/EPG-VOA.xml",
 ]
 
-# Keep a rolling window to shrink size (adjust if you want)
-KEEP_PAST_DAYS = 3     # keep 3 days behind "now"
-KEEP_FUTURE_DAYS = 14  # and 14 days ahead
+# 🔧 Keep a limited date window to keep file small
+KEEP_PAST_DAYS = 3
+KEEP_FUTURE_DAYS = 14
 
 def parse_xmltv_time(ts: str):
-    """
-    Parse XMLTV times like 'YYYYMMDDHHMMSS ±HHMM' or 'YYYYMMDDHHMMSSZ' or without TZ.
-    Returns timezone-aware UTC datetime, or None if unparsable.
-    """
+    """Parse XMLTV timestamps (e.g. 20251105120000 +0000) → datetime UTC"""
     if not ts:
         return None
     m = re.match(r"(\d{14})(?:\s*([+\-]\d{4}|Z))?", ts)
@@ -41,7 +57,7 @@ def parse_xmltv_time(ts: str):
     return dt
 
 def intersects_window(start_dt, stop_dt, win_start, win_end):
-    # keep programme if it overlaps the window at all
+    """Keep programme if it overlaps the target window"""
     if not start_dt and not stop_dt:
         return True
     if not start_dt:
@@ -51,11 +67,12 @@ def intersects_window(start_dt, stop_dt, win_start, win_end):
     return (start_dt <= win_end) and (stop_dt >= win_start)
 
 def fetch_xml(url):
+    """Download and parse XML or .gz EPG files"""
+    print(f"Fetching {url} ...")
     r = requests.get(url, timeout=180)
     r.raise_for_status()
     content = r.content
-    # transparent gunzip if needed
-    if content[:2] == b"\x1f\x8b":
+    if content[:2] == b"\x1f\x8b":  # handle gzip-compressed EPGs
         import gzip as gz
         content = gz.decompress(content)
     return etree.parse(BytesIO(content))
@@ -73,24 +90,21 @@ def main():
         try:
             doc = fetch_xml(url)
         except Exception as e:
-            print(f"WARNING: failed to fetch {url}: {e}", file=sys.stderr)
+            print(f"⚠️ Failed to fetch {url}: {e}", file=sys.stderr)
             continue
 
         root = doc.getroot()
 
-        # Copy channels (dedupe by id)
         for ch in root.findall("channel"):
             cid = ch.get("id") or ""
             if cid not in channel_ids_seen:
                 channel_ids_seen.add(cid)
                 tv_root.append(ch)
 
-        # Copy programmes if they overlap our time window
         for pr in root.findall("programme"):
-            ch = (pr.get("channel") or "")
+            ch = pr.get("channel") or ""
             start_s = pr.get("start") or ""
             stop_s  = pr.get("stop") or ""
-
             start_dt = parse_xmltv_time(start_s)
             stop_dt  = parse_xmltv_time(stop_s)
 
@@ -103,7 +117,7 @@ def main():
             programme_keys_seen.add(key)
             tv_root.append(pr)
 
-    # Sort for stability
+    # Sort elements for tidy output
     channels = [e for e in tv_root.findall("channel")]
     programmes = [e for e in tv_root.findall("programme")]
     for e in channels + programmes:
@@ -113,10 +127,11 @@ def main():
     for e in channels + programmes:
         tv_root.append(e)
 
-    # Write directly to gzip to stay under GitHub's 100MB limit
+    # Save compressed output
     tree = etree.ElementTree(tv_root)
     with gzip.open("merged_epg.xml.gz", "wb") as f:
         tree.write(f, encoding="utf-8", xml_declaration=True, pretty_print=False)
+    print("✅ Merged EPG saved as merged_epg.xml.gz")
 
 if __name__ == "__main__":
     main()
