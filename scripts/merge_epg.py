@@ -166,9 +166,9 @@ def main():
     for e in channels + programmes:
         tv_root.append(e)
 
-    # Save gzipped output with the name used in your repo/jsDelivr
+    # Save gzipped output with the name expected by the workflow
     tree = etree.ElementTree(tv_root)
-    output_name = "epg.xml.gz"  # this is what jsDelivr is serving
+    output_name = "merged_epg.xml.gz"   # <-- IMPORTANT: matches mv in build.yml
     with gzip.open(output_name, "wb") as f:
         tree.write(f, encoding="utf-8", xml_declaration=True, pretty_print=False)
 
