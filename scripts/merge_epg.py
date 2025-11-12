@@ -12,7 +12,7 @@ time window so the file stays fast and under CDN limits.
 - Future window: KEEP_FUTURE_DAYS (days after now)
 
 Currently configured for:
-  - 1 day past
+  - 0 days past
   - 1 day future
 """
 
@@ -47,7 +47,7 @@ URLS = [
 ]
 
 # 🔧 Time window to keep (to shrink file size)
-KEEP_PAST_DAYS = 1      # how many days BEFORE now to keep
+KEEP_PAST_DAYS = 0      # how many days BEFORE now to keep
 KEEP_FUTURE_DAYS = 1    # how many days AFTER now to keep
 
 
@@ -168,7 +168,7 @@ def main():
 
     # Save gzipped output with the name expected by the workflow
     tree = etree.ElementTree(tv_root)
-    output_name = "merged_epg.xml.gz"   # <-- IMPORTANT: matches mv in build.yml
+    output_name = "merged_epg.xml.gz"   # workflow moves this to dist/epg.xml.gz
     with gzip.open(output_name, "wb") as f:
         tree.write(f, encoding="utf-8", xml_declaration=True, pretty_print=False)
 
