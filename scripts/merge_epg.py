@@ -35,8 +35,8 @@ URLS = [
 ]
 
 # 🔧 Keep a limited date window to keep file small
-KEEP_PAST_DAYS = 3
-KEEP_FUTURE_DAYS = 14
+KEEP_PAST_DAYS = 1
+KEEP_FUTURE_DAYS = 1
 
 def parse_xmltv_time(ts: str):
     """Parse XMLTV timestamps (e.g. 20251105120000 +0000) → datetime UTC"""
