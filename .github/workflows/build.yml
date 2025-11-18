@@ -33,6 +33,14 @@ jobs:
         run: |
           python scripts/merge_epg.py
 
+      # 🛑 SAFETY CHECK — Prevent empty EPG overwrite
+      - name: Check merged EPG is not empty
+        run: |
+          if gzip -cd merged_epg.xml.gz | grep -q "<tv/>"; then
+            echo "❌ Error: Merged EPG is empty. Stopping to protect previous version."
+            exit 1
+          fi
+
       - name: Commit merged epg
         run: |
           git config user.name "github-actions[bot]"
@@ -42,7 +50,7 @@ jobs:
           mv merged_epg.xml.gz dist/epg.xml.gz
           git add dist/epg.xml.gz
           git commit -m "Update merged EPG (gzipped & pruned)" || echo "No changes to commit"
-          git push
+          git push origin HEAD:main --force
 
       - name: Upload artifact (optional)
         uses: actions/upload-artifact@v4
