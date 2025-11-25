@@ -5,18 +5,19 @@ from lxml import etree
 from io import BytesIO
 
 """
-Merge multiple XMLTV/EPG URLs into one gzipped EPG, keeping only a small
-time window so the file stays fast and under CDN limits.
+Merge multiple XMLTV/EPG URLs into one gzipped EPG.
 
 - Past window: KEEP_PAST_DAYS (days before now)
 - Future window: KEEP_FUTURE_DAYS (days after now)
 
-Currently configured for:
+Configured for:
   - 0 days past
   - 1 day future
+
+All original sources enabled again.
 """
 
-# ✅ All your EPG sources combined (including PEACOCK)
+# ✅ ALL YOUR EPG SOURCES (full list)
 URLS = [
     "https://epghub.xyz/epg/EPG-BEIN.xml",
     "https://epghub.xyz/epg/EPG-BR.xml",
