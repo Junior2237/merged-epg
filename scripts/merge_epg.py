@@ -5,19 +5,13 @@ from lxml import etree
 from io import BytesIO
 
 """
-Merge multiple XMLTV/EPG URLs into one gzipped EPG.
-
-- Past window: KEEP_PAST_DAYS (days before now)
-- Future window: KEEP_FUTURE_DAYS (days after now)
-
-Configured for:
+Merged EPG - Full Sources
+Time window:
   - 0 days past
   - 1 day future
-
-All original sources enabled again.
 """
 
-# ✅ ALL YOUR EPG SOURCES (full list)
+# ✅ UPDATED SOURCE LIST (as you provided)
 URLS = [
     "https://epghub.xyz/epg/EPG-BEIN.xml",
     "https://epghub.xyz/epg/EPG-BR.xml",
@@ -29,10 +23,8 @@ URLS = [
     "https://epghub.xyz/epg/EPG-DUMMY-CHANNELS.xml",
     "https://epghub.xyz/epg/EPG-ES.xml",
     "https://epghub.xyz/epg/EPG-FANDUEL.xml",
-    "https://epghub.xyz/epg/EPG-IT.xml",
     "https://epghub.xyz/epg/EPG-LOCOMOTIONTV.xml",
-    "https://epghub.xyz/epg/EPG-PAC.xml",
-    "https://epghub.xyz/epg/EPG-PEACOCK.xml.gz",
+    "https://epghub.xyz/epg/EPG-PEACOCK.xml",
     "https://epghub.xyz/epg/EPG-PLEX.xml",
     "https://epghub.xyz/epg/EPG-POWERNATION.xml",
     "https://epghub.xyz/epg/EPG-RAKUTEN.xml",
@@ -47,13 +39,11 @@ URLS = [
     "https://epghub.xyz/epg/EPG-VOA.xml",
 ]
 
-# 🔧 Time window to keep (to shrink file size)
-KEEP_PAST_DAYS = 0      # how many days BEFORE now to keep
-KEEP_FUTURE_DAYS = 1    # how many days AFTER now to keep
+KEEP_PAST_DAYS = 0
+KEEP_FUTURE_DAYS = 1
 
 
 def parse_xmltv_time(ts: str):
-    """Parse XMLTV timestamps (e.g. '20251105120000 +0000') → datetime in UTC."""
     if not ts:
         return None
     m = re.match(r"(\d{14})(?:\s*([+\-]\d{4}|Z))?", ts)
@@ -76,31 +66,22 @@ def parse_xmltv_time(ts: str):
 
 
 def intersects_window(start_dt, stop_dt, win_start, win_end):
-    """
-    Return True if a programme [start_dt, stop_dt] overlaps the window
-    [win_start, win_end].
-    """
-    # If no timestamps, keep to be safe
     if not start_dt and not stop_dt:
         return True
-    # If only stop time, make sure it ends after window start
     if not start_dt:
         return stop_dt >= win_start
-    # If only start time, make sure it starts before window end
     if not stop_dt:
         return start_dt <= win_end
-    # Normal case: check interval overlap
     return (start_dt <= win_end) and (stop_dt >= win_start)
 
 
 def fetch_xml(url):
-    """Download and parse XML or .gz EPG files into an lxml ElementTree."""
     print(f"Fetching {url} ...")
     r = requests.get(url, timeout=180)
     r.raise_for_status()
     content = r.content
 
-    # Handle gzip-compressed responses and .xml.gz files
+    # handle gz automatically
     if content[:2] == b"\x1f\x8b":
         content = gzip.decompress(content)
 
@@ -125,14 +106,12 @@ def main():
 
         root = doc.getroot()
 
-        # Merge channels (de-duplicate by id)
         for ch in root.findall("channel"):
             cid = ch.get("id") or ""
             if cid not in channel_ids_seen:
                 channel_ids_seen.add(cid)
                 tv_root.append(ch)
 
-        # Merge programmes with time-window + de-duplication
         for pr in root.findall("programme"):
             ch = pr.get("channel") or ""
             start_s = pr.get("start") or ""
@@ -141,20 +120,17 @@ def main():
             start_dt = parse_xmltv_time(start_s)
             stop_dt = parse_xmltv_time(stop_s)
 
-            # Drop programmes entirely outside our [win_start, win_end] window
             if not intersects_window(start_dt, stop_dt, win_start, win_end):
                 continue
 
             title_text = (pr.findtext("title") or "").strip()
             key = (ch, start_s, stop_s, title_text)
 
-            # De-duplicate identical programmes
             if key in programme_keys_seen:
                 continue
             programme_keys_seen.add(key)
             tv_root.append(pr)
 
-    # Sort channels and programmes for tidy output
     channels = [e for e in tv_root.findall("channel")]
     programmes = [e for e in tv_root.findall("programme")]
 
@@ -167,13 +143,12 @@ def main():
     for e in channels + programmes:
         tv_root.append(e)
 
-    # Save gzipped output with the name expected by the workflow
     tree = etree.ElementTree(tv_root)
-    output_name = "merged_epg.xml.gz"   # workflow moves this to dist/epg.xml.gz
+    output_name = "merged_epg.xml.gz"
     with gzip.open(output_name, "wb") as f:
         tree.write(f, encoding="utf-8", xml_declaration=True, pretty_print=False)
 
-    print(f"✅ Merged EPG saved as {output_name}")
+    print("✅ Merged EPG saved successfully")
 
 
 if __name__ == "__main__":
