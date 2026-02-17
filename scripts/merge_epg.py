@@ -7,11 +7,11 @@ from io import BytesIO
 """
 Merged EPG - Full Sources
 Time window:
-  - 0 days past
+  - 1 day past
   - 1 day future
 """
 
-# ✅ UPDATED SOURCE LIST (as you provided)
+# ✅ UPDATED SOURCE LIST (PEACOCK kept as .xml)
 URLS = [
     "https://epghub.xyz/epg/EPG-BEIN.xml",
     "https://epghub.xyz/epg/EPG-BR.xml",
@@ -24,7 +24,7 @@ URLS = [
     "https://epghub.xyz/epg/EPG-ES.xml",
     "https://epghub.xyz/epg/EPG-FANDUEL.xml",
     "https://epghub.xyz/epg/EPG-LOCOMOTIONTV.xml",
-    "https://epghub.xyz/epg/EPG-PEACOCK.xml",
+    "https://epghub.xyz/epg/EPG-PEACOCK.xml",   
     "https://epghub.xyz/epg/EPG-PLEX.xml",
     "https://epghub.xyz/epg/EPG-POWERNATION.xml",
     "https://epghub.xyz/epg/EPG-RAKUTEN.xml",
@@ -39,7 +39,8 @@ URLS = [
     "https://epghub.xyz/epg/EPG-VOA.xml",
 ]
 
-KEEP_PAST_DAYS = 0
+# ✅ safer window so it won't produce empty <tv/>
+KEEP_PAST_DAYS = 1
 KEEP_FUTURE_DAYS = 1
 
 
@@ -81,7 +82,7 @@ def fetch_xml(url):
     r.raise_for_status()
     content = r.content
 
-    # handle gz automatically
+    # handle gz automatically if server returns gzip content
     if content[:2] == b"\x1f\x8b":
         content = gzip.decompress(content)
 
