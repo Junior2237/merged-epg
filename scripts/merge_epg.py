@@ -1,18 +1,16 @@
-import sys, re, gzip, time, shutil, os
+import sys
+import re
 from datetime import datetime, timedelta, timezone
 import requests
 from lxml import etree
 from io import BytesIO
 
 """
-Merged EPG - Full Sources
+Merged EPG - Stable Version
 Time window:
-  - 1 day past
-  - 1 day future
-
-IMPORTANT SAFETY:
-- If ALL sources fail (epghub blocks GitHub Actions sometimes),
-  we reuse the previous dist/epg.xml.gz instead of producing <tv/>.
+  - 2 days past
+  - 7 days future
+Output: merged_epg.xml
 """
 
 URLS = [
@@ -27,7 +25,7 @@ URLS = [
     "https://epghub.xyz/epg/EPG-ES.xml",
     "https://epghub.xyz/epg/EPG-FANDUEL.xml",
     "https://epghub.xyz/epg/EPG-LOCOMOTIONTV.xml",
-    "https://epghub.xyz/epg/EPG-PEACOCK.xml",   # ✅ keep XML
+    "https://epghub.xyz/epg/EPG-PEACOCK.xml",
     "https://epghub.xyz/epg/EPG-PLEX.xml",
     "https://epghub.xyz/epg/EPG-POWERNATION.xml",
     "https://epghub.xyz/epg/EPG-RAKUTEN.xml",
@@ -42,14 +40,8 @@ URLS = [
     "https://epghub.xyz/epg/EPG-VOA.xml",
 ]
 
-KEEP_PAST_DAYS = 1
-KEEP_FUTURE_DAYS = 1
-
-# Helps avoid epghub blocking GitHub Actions
-HEADERS = {
-    "User-Agent": "Mozilla/5.0 (compatible; merged-epg-bot/1.0; +https://github.com/Junior2237/merged-epg)",
-    "Accept": "*/*",
-}
+KEEP_PAST_DAYS = 2
+KEEP_FUTURE_DAYS = 7
 
 
 def parse_xmltv_time(ts: str):
@@ -84,39 +76,11 @@ def intersects_window(start_dt, stop_dt, win_start, win_end):
     return (start_dt <= win_end) and (stop_dt >= win_start)
 
 
-def fetch_xml(url: str, retries: int = 3):
-    """Download and parse XML or .gz EPG files with retries."""
-    last_err = None
-    for attempt in range(1, retries + 1):
-        try:
-            print(f"Fetching {url} (attempt {attempt}/{retries}) ...")
-            r = requests.get(url, timeout=180, headers=HEADERS)
-            r.raise_for_status()
-            content = r.content
-
-            # If content is actually gz bytes, decompress by magic header
-            if content[:2] == b"\x1f\x8b":
-                content = gzip.decompress(content)
-
-            return etree.parse(BytesIO(content))
-        except Exception as e:
-            last_err = e
-            # small backoff
-            time.sleep(2 * attempt)
-
-    raise last_err
-
-
-def reuse_previous_if_available(output_name: str):
-    """If merge failed completely, copy previous dist/epg.xml.gz to output."""
-    prev_path = os.path.join("dist", "epg.xml.gz")
-    if os.path.exists(prev_path):
-        print("⚠️ All sources failed. Reusing previous dist/epg.xml.gz to avoid breaking output.")
-        shutil.copyfile(prev_path, output_name)
-        return True
-
-    print("❌ All sources failed AND no previous dist/epg.xml.gz exists. Cannot recover.")
-    return False
+def fetch_xml(url):
+    print(f"Fetching {url} ...")
+    r = requests.get(url, timeout=180)
+    r.raise_for_status()
+    return etree.parse(BytesIO(r.content))
 
 
 def main():
@@ -127,13 +91,11 @@ def main():
     tv_root = etree.Element("tv")
     channel_ids_seen = set()
     programme_keys_seen = set()
-
-    sources_ok = 0
+    programme_count = 0
 
     for url in URLS:
         try:
             doc = fetch_xml(url)
-            sources_ok += 1
         except Exception as e:
             print(f"⚠️ Failed to fetch {url}: {e}", file=sys.stderr)
             continue
@@ -142,12 +104,12 @@ def main():
 
         for ch in root.findall("channel"):
             cid = ch.get("id") or ""
-            if cid and cid not in channel_ids_seen:
+            if cid not in channel_ids_seen:
                 channel_ids_seen.add(cid)
                 tv_root.append(ch)
 
         for pr in root.findall("programme"):
-            ch = pr.get("channel") or ""
+            ch_id = pr.get("channel") or ""
             start_s = pr.get("start") or ""
             stop_s = pr.get("stop") or ""
 
@@ -158,45 +120,24 @@ def main():
                 continue
 
             title_text = (pr.findtext("title") or "").strip()
-            key = (ch, start_s, stop_s, title_text)
+            key = (ch_id, start_s, stop_s, title_text)
 
             if key in programme_keys_seen:
                 continue
+
             programme_keys_seen.add(key)
             tv_root.append(pr)
+            programme_count += 1
 
-    output_name = "merged_epg.xml.gz"
-
-    # If everything failed, reuse previous file so workflow doesn't break
-    if sources_ok == 0 or (len(channel_ids_seen) == 0 and len(programme_keys_seen) == 0):
-        recovered = reuse_previous_if_available(output_name)
-        if recovered:
-            return
-        # If we cannot recover, write minimal file (will fail check, but at least logs show why)
-        tree = etree.ElementTree(tv_root)
-        with gzip.open(output_name, "wb") as f:
-            tree.write(f, encoding="utf-8", xml_declaration=True, pretty_print=False)
-        return
-
-    # Sort elements for tidy output
-    channels = [e for e in tv_root.findall("channel")]
-    programmes = [e for e in tv_root.findall("programme")]
-
-    for e in channels + programmes:
-        tv_root.remove(e)
-
-    channels.sort(key=lambda c: (c.get("id") or ""))
-    programmes.sort(key=lambda p: (p.get("start") or ""))
-
-    for e in channels + programmes:
-        tv_root.append(e)
+    if programme_count == 0:
+        print("❌ ERROR: No programmes found. Stopping to protect previous version.")
+        sys.exit(1)
 
     tree = etree.ElementTree(tv_root)
-    with gzip.open(output_name, "wb") as f:
-        tree.write(f, encoding="utf-8", xml_declaration=True, pretty_print=False)
+    output_name = "merged_epg.xml"
+    tree.write(output_name, encoding="utf-8", xml_declaration=True)
 
-    print(f"✅ Merged EPG saved successfully: {output_name}")
-    print(f"✅ Sources OK: {sources_ok}/{len(URLS)} | Channels: {len(channel_ids_seen)} | Programmes: {len(programme_keys_seen)}")
+    print(f"✅ Success. Programmes kept: {programme_count}")
 
 
 if __name__ == "__main__":
